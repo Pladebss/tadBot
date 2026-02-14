@@ -11,9 +11,14 @@ const { startBoostedWatcher } = require("./handlers/boostedWatcher");
 const { startCommandRouter } = require("./handlers/commandRouter");
 const { StatsCollector } = require("./util/statsCollector");
 
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = process.cwd(); // directory you run the exe/bot from
 const CONFIG_PATH = path.join(ROOT, "config.json");
 const STATE_PATH = path.join(ROOT, "data", "state.json");
+
+function ensureDir(p) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
 
 function loadConfig() {
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -70,8 +75,15 @@ async function main() {
   const logger = createLogger({ verbose: Boolean(config.logging?.verbose) });
   logger.info("Starting Discord Booster Bot V3.1");
 
-  const state = readJson(STATE_PATH, { lastFieldName: null, lastMappedToken: null, lastBoostAt: null });
+  ensureDir(path.join(ROOT, "data"));
+
+  const state = readJson(STATE_PATH, {
+    lastFieldName: null,
+    lastMappedToken: null,
+    lastBoostAt: null,
+  });
   if (!fs.existsSync(STATE_PATH)) writeJsonAtomic(STATE_PATH, state);
+
 
   const client = new Client({
     intents: [

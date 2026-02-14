@@ -18,6 +18,7 @@ data/stats.json
 tools/
 
 config.json
+build.bat
 package-lock.json
 app_version.txt
 TadBotLauncher/

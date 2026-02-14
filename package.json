@@ -1,14 +1,35 @@
 {
-  "name": "discord-booster-bot-v3",
-  "version": "3.1.0",
+  "name": "tadbot",
+  "version": "3.1.5",
+  "description": "Discord Booster + PC Stats Bot",
   "private": true,
-  "main": "src/index.js",
   "type": "commonjs",
+
+  "main": "src/index.js",
+  "bin": "src/index.js",
+
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "build": "pkg . --targets node18-win-x64 --output executable/tadbot.exe"
   },
+
   "dependencies": {
     "discord.js": "^14.16.3",
     "systeminformation": "^5.30.8"
+  },
+
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "assets": [
+      "config.template.json",
+      "data/**/*"
+    ],
+    "outputPath": "executable"
   }
 }
