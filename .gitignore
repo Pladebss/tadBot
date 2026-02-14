@@ -8,6 +8,8 @@ yarn-error.log*
 # Local secrets / launcher
 run_bot.dev.bat
 
+
+
 # Runtime state (local)
 data/state.json
 data/stats.json
@@ -15,7 +17,9 @@ data/stats.json
 # Portable tools (optional)
 tools/
 
+config.json
 package-lock.json
 app_version.txt
 TadBotLauncher/
 temp_update/
+executable/

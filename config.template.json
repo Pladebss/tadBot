@@ -1,11 +1,11 @@
 {
-  "monitorChannelId": "1459419219899715768",
+  "monitorChannelId": "MONITOR_CHANNEL_ID",
   "boostDestChannelIds": [
-    "1467046321805459549",
-    "1472264670227468368"
+    "DEST1_CHANNEL_ID",
+    "DEST2_CHANNEL_ID"
   ],
   "superUsers": [
-    "639557285437243392"
+    "ADMIN_USERIDS_HERE"
   ],
   "fieldMapping": {
     "Pine Tree": "PineTree",
@@ -24,11 +24,10 @@
   "slashRegistration": {
     "guildOnly": true,
     "guildIds": [
-      "1465119276020011104"
+      "GUILD_ID_HERE"
     ]
   },
   "logging": {
     "verbose": true
   }
 }
-
