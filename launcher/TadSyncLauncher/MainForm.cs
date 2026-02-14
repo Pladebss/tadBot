@@ -24,7 +24,7 @@ namespace TadSyncLauncher
 
     private readonly CheckBox _chkAutoStart = new();
 
-    private readonly Timer _uiTimer = new();
+    private readonly System.Windows.Forms.Timer _uiTimer = new();
 
     public MainForm()
     {
