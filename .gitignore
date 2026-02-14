@@ -42,5 +42,6 @@ temp_update/
 # Reserved For Building
 ########################################
 build_*
+build.bat
 edit_token.bat
 OLD/
