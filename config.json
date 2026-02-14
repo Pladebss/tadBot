@@ -1,0 +1,33 @@
+{
+  "monitorChannelId": "1459419219899715768",
+  "boostDestChannelIds": [
+    "1467046321805459549",
+    "1472264670227468368"
+  ],
+  "superUsers": [
+    "639557285437243392"
+  ],
+  "fieldMapping": {
+    "Pine Tree": "PineTree",
+    "Bamboo": "Bamboo",
+    "Blue Flower": "BlueFlower"
+  },
+  "presence": {
+    "ttlMinutes": 15,
+    "activeTemplate": "Gathering: {field}",
+    "idleText": "Standing By..."
+  },
+  "restart": {
+    "rdpRestartBatchPath": "C:\\\\path\\\\to\\\\restart_rdp_flow.bat",
+    "allowPcRestart": true
+  },
+  "slashRegistration": {
+    "guildOnly": true,
+    "guildIds": [
+      "1465119276020011104"
+    ]
+  },
+  "logging": {
+    "verbose": true
+  }
+}

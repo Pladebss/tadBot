@@ -1,0 +1,17 @@
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local secrets / launcher
+run_bot.bat
+
+# Runtime state (local)
+data/state.json
+
+# Portable tools (optional)
+tools/
+
+package-lock.json
