@@ -7,117 +7,187 @@ namespace TadSyncLauncher
 {
   public sealed class SetupWizardForm : Form
   {
+    private readonly Panel _content = new();
+    private readonly Panel _footer = new();
+
     private readonly TextBox _token = new();
     private readonly TextBox _monitor = new();
     private readonly TextBox _dest = new();
     private readonly NumericUpDown _ttl = new();
     private readonly DataGridView _mapping = new();
 
+    private readonly Button _btnFinish = new();
+    private readonly Button _btnCancel = new();
+
     public SetupWizardForm()
     {
       Text = "TadSync Setup Wizard";
       StartPosition = FormStartPosition.CenterParent;
-      ClientSize = new Size(740, 520);
-      FormBorderStyle = FormBorderStyle.FixedDialog;
-      MaximizeBox = false;
+      ClientSize = new Size(820, 620);
+      FormBorderStyle = FormBorderStyle.Sizable;
+      MinimumSize = new Size(760, 560);
 
+      Theme.ApplyForm(this);
       AppPaths.EnsureDirs();
 
-      BuildUI();
+      BuildLayout();
     }
 
-    private void BuildUI()
+    private void BuildLayout()
     {
-      var lbl = new Label
+      // Scrollable content area
+      _content.Dock = DockStyle.Fill;
+      _content.AutoScroll = true;
+      _content.BackColor = Theme.Bg;
+      Controls.Add(_content);
+
+      // Fixed footer (always visible)
+      _footer.Dock = DockStyle.Bottom;
+      _footer.Height = 72;
+      _footer.BackColor = Theme.Panel;
+      _footer.Padding = new Padding(14, 12, 14, 12);
+      _footer.BorderStyle = BorderStyle.FixedSingle;
+      Controls.Add(_footer);
+
+      _btnFinish.Text = "Finish Setup";
+      _btnFinish.Size = new Size(140, 36);
+      _btnFinish.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+      _btnFinish.Location = new Point(_footer.Width - 160, 16);
+      _btnFinish.Click += (_, __) => Finish();
+      Theme.StyleButton(_btnFinish, primary: true);
+
+      _btnCancel.Text = "Cancel";
+      _btnCancel.Size = new Size(110, 36);
+      _btnCancel.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+      _btnCancel.Location = new Point(_footer.Width - 280, 16);
+      _btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
+      Theme.StyleButton(_btnCancel, primary: false);
+
+      _footer.Controls.Add(_btnCancel);
+      _footer.Controls.Add(_btnFinish);
+
+      _footer.Resize += (_, __) =>
+      {
+        _btnFinish.Location = new Point(_footer.Width - _btnFinish.Width - 16, 16);
+        _btnCancel.Location = new Point(_btnFinish.Left - _btnCancel.Width - 12, 16);
+      };
+
+      // Content inside scroll panel
+      int pad = 18;
+      int y = 18;
+
+      var title = new Label
       {
         Text = "First-time Setup",
         AutoSize = true,
-        Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
-        Location = new Point(18, 14)
+        Font = Theme.TitleFont(this),
+        Location = new Point(pad, y),
+        ForeColor = Theme.Text
       };
-      Controls.Add(lbl);
+      _content.Controls.Add(title);
 
-      int y = 60;
-
-      AddLabel("Discord Bot Token:", 18, y);
-      _token.Location = new Point(220, y - 2);
-      _token.Size = new Size(480, 24);
-      Controls.Add(_token);
-      y += 38;
-
-      AddLabel("Monitor Channel ID:", 18, y);
-      _monitor.Location = new Point(220, y - 2);
-      _monitor.Size = new Size(240, 24);
-      Controls.Add(_monitor);
-      y += 38;
-
-      AddLabel("Destination Channel IDs (comma-separated):", 18, y);
-      _dest.Location = new Point(220, y - 2);
-      _dest.Size = new Size(480, 24);
-      Controls.Add(_dest);
-      y += 38;
-
-      AddLabel("Gathering TTL (minutes):", 18, y);
-      _ttl.Location = new Point(220, y - 2);
-      _ttl.Minimum = 1;
-      _ttl.Maximum = 240;
-      _ttl.Value = 15;
-      Controls.Add(_ttl);
       y += 44;
+      _content.Controls.Add(Theme.MutedLabel("Fill this out once. You can edit later from the main control panel.", pad, y));
+      y += 28;
 
-      var mapTitle = new Label
-      {
-        Text = "Field Mapping (FieldName -> MessageToSend)",
-        AutoSize = true,
-        Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-        Location = new Point(18, y)
-      };
-      Controls.Add(mapTitle);
+      // Card: Essentials
+      var card1 = Theme.Card(pad, y, 760, 180);
+      _content.Controls.Add(card1);
 
-      y += 24;
+      card1.Controls.Add(Theme.H2("Essentials", 14, 14, this));
+      card1.Controls.Add(Theme.MutedLabel("Token + channels. Destination channels receive the FollowTo messages.", 14, 40));
 
-      _mapping.Location = new Point(18, y);
-      _mapping.Size = new Size(682, 280);
+      int cy = 72;
+      AddLabeledText(card1, "Discord Bot Token", _token, 14, cy, 720, mask: true);
+      cy += 44;
+
+      AddLabeledText(card1, "Monitor Channel ID", _monitor, 14, cy, 320);
+      AddLabeledText(card1, "Dest Channel IDs (comma-separated)", _dest, 350, cy, 384);
+      cy += 44;
+
+      AddLabeledNumeric(card1, "Gathering TTL (minutes)", _ttl, 14, cy, 140, 1, 240, 15);
+
+      y += card1.Height + 14;
+
+      // Card: Mapping
+      var card2 = Theme.Card(pad, y, 760, 300);
+      _content.Controls.Add(card2);
+
+      card2.Controls.Add(Theme.H2("Field Mapping", 14, 14, this));
+      card2.Controls.Add(Theme.MutedLabel("If any message/embed contains Boosted: <FieldName>, send the mapped plaintext.", 14, 40));
+
+      _mapping.Location = new Point(14, 72);
+      _mapping.Size = new Size(720, 210);
       _mapping.AllowUserToAddRows = true;
       _mapping.AllowUserToDeleteRows = true;
-      _mapping.RowHeadersVisible = false;
       _mapping.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-      _mapping.Columns.Add("FieldName", "Field Name");
-      _mapping.Columns.Add("TokenToSend", "Message to Send");
-      Controls.Add(_mapping);
+      _mapping.Columns.Add("FieldName", "Field Name (matches Boosted: ... text)");
+      _mapping.Columns.Add("TokenToSend", "Message to Send (plaintext)");
+      Theme.StyleGrid(_mapping);
 
-      // default examples
+      // Defaults
       _mapping.Rows.Add("Pine Tree", "FollowTo PineTree");
       _mapping.Rows.Add("Bamboo", "FollowTo Bamboo");
       _mapping.Rows.Add("Blue Flower", "FollowTo BlueFlower");
 
-      var btnSave = new Button
-      {
-        Text = "Finish Setup",
-        Size = new Size(140, 36),
-        Location = new Point(560, 460)
-      };
-      btnSave.Click += (_, __) => Finish();
-      Controls.Add(btnSave);
+      card2.Controls.Add(_mapping);
 
-      var btnCancel = new Button
+      // Make mapping card stretch nicely with window
+      card1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      card2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+      _content.Resize += (_, __) =>
       {
-        Text = "Cancel",
-        Size = new Size(100, 36),
-        Location = new Point(450, 460)
+        int w = _content.ClientSize.Width - (pad * 2) - SystemInformation.VerticalScrollBarWidth;
+        if (w < 640) w = 640;
+
+        card1.Width = w;
+        card2.Width = w;
+
+        _token.Width = w - 40;
+        _mapping.Width = w - 40;
+
+        // adjust right-side dest box
+        _dest.Width = Math.Max(220, w - 40 - 350);
       };
-      btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
-      Controls.Add(btnCancel);
     }
 
-    private void AddLabel(string text, int x, int y)
+    private void AddLabeledText(Panel parent, string label, TextBox tb, int x, int y, int w, bool mask = false)
     {
-      Controls.Add(new Label
+      var l = new Label
       {
-        Text = text,
+        Text = label,
         AutoSize = true,
-        Location = new Point(x, y)
-      });
+        Location = new Point(x, y),
+        ForeColor = Theme.Muted
+      };
+      parent.Controls.Add(l);
+
+      tb.Location = new Point(x, y + 18);
+      tb.Size = new Size(w, 24);
+      if (mask) tb.UseSystemPasswordChar = true;
+      Theme.StyleTextBox(tb);
+      parent.Controls.Add(tb);
+    }
+
+    private void AddLabeledNumeric(Panel parent, string label, NumericUpDown n, int x, int y, int w, int min, int max, int val)
+    {
+      var l = new Label
+      {
+        Text = label,
+        AutoSize = true,
+        Location = new Point(x, y),
+        ForeColor = Theme.Muted
+      };
+      parent.Controls.Add(l);
+
+      n.Location = new Point(x, y + 18);
+      n.Size = new Size(w, 24);
+      n.Minimum = min;
+      n.Maximum = max;
+      n.Value = val;
+      Theme.StyleNumeric(n);
+      parent.Controls.Add(n);
     }
 
     private static List<string> ParseCsvIds(string s)
@@ -138,7 +208,7 @@ namespace TadSyncLauncher
       var monitor = _monitor.Text.Trim();
       var dest = ParseCsvIds(_dest.Text);
 
-      if (string.IsNullOrWhiteSpace(token) || token.Contains("PASTE"))
+      if (string.IsNullOrWhiteSpace(token))
       {
         MessageBox.Show("Please paste a real token.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         return;
@@ -180,7 +250,6 @@ namespace TadSyncLauncher
       };
 
       JsonUtil.Write(AppPaths.ConfigPath, cfg);
-
       DialogResult = DialogResult.OK;
       Close();
     }

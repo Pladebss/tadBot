@@ -30,10 +30,10 @@ namespace TadSyncLauncher
     {
       Text = "TadSync Control Panel";
       StartPosition = FormStartPosition.CenterScreen;
-      ClientSize = new Size(640, 360);
-      FormBorderStyle = FormBorderStyle.FixedDialog;
-      MaximizeBox = false;
+      ClientSize = new Size(760, 420);
+      MinimumSize = new Size(740, 400);
 
+      Theme.ApplyForm(this);
       AppPaths.EnsureDirs();
 
       LoadSettings();
@@ -44,9 +44,7 @@ namespace TadSyncLauncher
       Shown += (_, __) =>
       {
         if (_settings.AutoStartBotOnOpen)
-        {
           SafeStartBot();
-        }
       };
 
       _uiTimer.Interval = 1000;
@@ -58,98 +56,112 @@ namespace TadSyncLauncher
 
     private void BuildLayout()
     {
+      var header = Theme.Card(18, 18, ClientSize.Width - 36, 72);
+      header.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      Controls.Add(header);
+
       var title = new Label
       {
         Text = "TadSync Control Panel",
-        Font = new Font(Font.FontFamily, 16, FontStyle.Bold),
         AutoSize = true,
-        Location = new Point(18, 16)
+        Font = Theme.TitleFont(this),
+        Location = new Point(16, 12),
+        ForeColor = Theme.Text
       };
-      Controls.Add(title);
+      header.Controls.Add(title);
 
-      int y = 60;
+      header.Controls.Add(Theme.MutedLabel("Manage bot + config. Live status updates from AppData.", 16, 44));
 
-      AddRow("Bot Status:", _lblBotState, y); y += 28;
-      AddRow("Bot Uptime:", _lblUptime, y); y += 28;
-      AddRow("Last Activated:", _lblLastBoost, y); y += 28;
-      AddRow("Current Field:", _lblField, y); y += 28;
-      AddRow("Presence:", _lblPresence, y); y += 40;
+      var statusCard = Theme.Card(18, 104, ClientSize.Width - 36, 190);
+      statusCard.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      Controls.Add(statusCard);
+
+      statusCard.Controls.Add(Theme.H2("Live Status", 16, 14, this));
+
+      int y = 52;
+      AddRow(statusCard, "Bot Status:", _lblBotState, y); y += 28;
+      AddRow(statusCard, "Bot Uptime:", _lblUptime, y); y += 28;
+      AddRow(statusCard, "Last Activated:", _lblLastBoost, y); y += 28;
+      AddRow(statusCard, "Current Field:", _lblField, y); y += 28;
+      AddRow(statusCard, "Presence:", _lblPresence, y);
+
+      var actions = Theme.Card(18, 308, ClientSize.Width - 36, 92);
+      actions.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      Controls.Add(actions);
+
+      actions.Controls.Add(Theme.H2("Actions", 16, 14, this));
 
       _btnStart.Text = "Start Bot";
-      _btnStart.Size = new Size(120, 36);
-      _btnStart.Location = new Point(18, y);
+      _btnStart.Size = new Size(120, 34);
+      _btnStart.Location = new Point(16, 44);
       _btnStart.Click += (_, __) => SafeStartBot();
-      Controls.Add(_btnStart);
+      Theme.StyleButton(_btnStart, primary: true);
+      actions.Controls.Add(_btnStart);
 
       _btnRestart.Text = "Restart Bot";
-      _btnRestart.Size = new Size(120, 36);
-      _btnRestart.Location = new Point(150, y);
+      _btnRestart.Size = new Size(120, 34);
+      _btnRestart.Location = new Point(148, 44);
       _btnRestart.Click += (_, __) => SafeRestartBot();
-      Controls.Add(_btnRestart);
+      Theme.StyleButton(_btnRestart);
+      actions.Controls.Add(_btnRestart);
 
       _btnEditToken.Text = "Edit Token";
-      _btnEditToken.Size = new Size(120, 36);
-      _btnEditToken.Location = new Point(282, y);
+      _btnEditToken.Size = new Size(120, 34);
+      _btnEditToken.Location = new Point(280, 44);
       _btnEditToken.Click += (_, __) => OpenConfigEditor(focusToken: true);
-      Controls.Add(_btnEditToken);
+      Theme.StyleButton(_btnEditToken);
+      actions.Controls.Add(_btnEditToken);
 
       _btnEditConfig.Text = "Edit Config";
-      _btnEditConfig.Size = new Size(120, 36);
-      _btnEditConfig.Location = new Point(414, y);
+      _btnEditConfig.Size = new Size(120, 34);
+      _btnEditConfig.Location = new Point(412, 44);
       _btnEditConfig.Click += (_, __) => OpenConfigEditor(focusToken: false);
-      Controls.Add(_btnEditConfig);
-
-      y += 54;
+      Theme.StyleButton(_btnEditConfig);
+      actions.Controls.Add(_btnEditConfig);
 
       _chkAutoStart.Text = "Auto-start bot when launcher opens";
       _chkAutoStart.AutoSize = true;
-      _chkAutoStart.Location = new Point(18, y);
+      _chkAutoStart.Location = new Point(552, 50);
       _chkAutoStart.Checked = _settings.AutoStartBotOnOpen;
       _chkAutoStart.CheckedChanged += (_, __) =>
       {
         _settings.AutoStartBotOnOpen = _chkAutoStart.Checked;
         SaveSettings();
       };
-      Controls.Add(_chkAutoStart);
+      Theme.StyleCheck(_chkAutoStart);
+      actions.Controls.Add(_chkAutoStart);
 
       var btnOpenAppData = new Button
       {
-        Text = "Open AppData Folder",
-        Size = new Size(160, 28),
-        Location = new Point(18, y + 38)
+        Text = "Open AppData",
+        Size = new Size(120, 30),
+        Location = new Point(actions.Width - 136, 12),
+        Anchor = AnchorStyles.Top | AnchorStyles.Right
       };
       btnOpenAppData.Click += (_, __) =>
       {
-        try { System.Diagnostics.Process.Start("explorer.exe", AppPaths.AppDataRoot); }
-        catch { }
+        try { System.Diagnostics.Process.Start("explorer.exe", AppPaths.AppDataRoot); } catch { }
       };
-      Controls.Add(btnOpenAppData);
-
-      var hint = new Label
-      {
-        Text = $"Config: {AppPaths.ConfigPath}",
-        AutoSize = true,
-        Location = new Point(18, ClientSize.Height - 28),
-        ForeColor = Color.DimGray
-      };
-      Controls.Add(hint);
+      Theme.StyleButton(btnOpenAppData);
+      actions.Controls.Add(btnOpenAppData);
     }
 
-    private void AddRow(string label, Label value, int y)
+    private void AddRow(Panel parent, string label, Label value, int y)
     {
       var lbl = new Label
       {
         Text = label,
         AutoSize = true,
-        Location = new Point(18, y + 2),
-        Font = new Font(Font.FontFamily, 10, FontStyle.Bold)
+        Location = new Point(16, y),
+        ForeColor = Theme.Muted
       };
-      Controls.Add(lbl);
+      parent.Controls.Add(lbl);
 
       value.Text = "—";
       value.AutoSize = true;
-      value.Location = new Point(160, y + 2);
-      Controls.Add(value);
+      value.Location = new Point(160, y);
+      value.ForeColor = Theme.Text;
+      parent.Controls.Add(value);
     }
 
     private void LoadSettings()
@@ -158,26 +170,16 @@ namespace TadSyncLauncher
       JsonUtil.Write(AppPaths.SettingsPath, _settings);
     }
 
-    private void SaveSettings()
-    {
-      JsonUtil.Write(AppPaths.SettingsPath, _settings);
-    }
+    private void SaveSettings() => JsonUtil.Write(AppPaths.SettingsPath, _settings);
 
     private void LoadOrRunSetupIfNeeded()
     {
       _config = JsonUtil.Read<BotConfig>(AppPaths.ConfigPath);
-
-      if (_config == null || string.IsNullOrWhiteSpace(_config.DiscordToken) || _config.DiscordToken.Contains("PASTE"))
+      if (_config == null || string.IsNullOrWhiteSpace(_config.DiscordToken))
       {
         using var setup = new SetupWizardForm();
         var res = setup.ShowDialog(this);
-        if (res != DialogResult.OK)
-        {
-          // If user closes setup, just close app.
-          Close();
-          return;
-        }
-
+        if (res != DialogResult.OK) { Close(); return; }
         _config = JsonUtil.Read<BotConfig>(AppPaths.ConfigPath);
       }
     }
@@ -187,22 +189,18 @@ namespace TadSyncLauncher
       using var editor = new ConfigEditorForm(focusToken);
       var res = editor.ShowDialog(this);
       if (res == DialogResult.OK)
-      {
         _config = JsonUtil.Read<BotConfig>(AppPaths.ConfigPath);
-      }
     }
 
     private void SafeStartBot()
     {
       try
       {
-        // ensure config exists
         if (!File.Exists(AppPaths.ConfigPath))
         {
           MessageBox.Show("Config not found. Run setup first.", "TadSync", MessageBoxButtons.OK, MessageBoxIcon.Warning);
           return;
         }
-
         _bot.StartBot();
         RefreshStatusUI();
       }
@@ -230,8 +228,8 @@ namespace TadSyncLauncher
       var status = JsonUtil.Read<BotStatus>(AppPaths.StatusPath);
 
       var running = _bot.IsRunning;
-      _lblBotState.Text = running ? $"Running (PID {(_bot.Pid ?? 0)})" : "Stopped";
-      _lblBotState.ForeColor = running ? Color.DarkGreen : Color.DarkRed;
+      _lblBotState.Text = running ? $"Running (PID {_bot.Pid})" : "Stopped";
+      _lblBotState.ForeColor = running ? Theme.Green : Theme.Red;
 
       if (status?.StartedAt != null)
       {
@@ -239,18 +237,13 @@ namespace TadSyncLauncher
         var up = DateTimeOffset.UtcNow - started;
         _lblUptime.Text = TimeFmt.FmtSpan(up);
       }
-      else
-      {
-        _lblUptime.Text = "N/A";
-      }
+      else _lblUptime.Text = "N/A";
 
       _lblLastBoost.Text = TimeFmt.MinutesAgoFromEpochMs(status?.LastBoostAt);
       _lblField.Text = status?.LastFieldName ?? "N/A";
       _lblPresence.Text = status?.PresenceText ?? "N/A";
 
-      // button enable states
       _btnStart.Enabled = !running;
-      _btnRestart.Enabled = true;
     }
   }
 }
