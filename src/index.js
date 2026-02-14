@@ -9,6 +9,7 @@ const { PresenceManager } = require("./util/presence");
 const { deployCommands } = require("./deploy-commands");
 const { startBoostedWatcher } = require("./handlers/boostedWatcher");
 const { startCommandRouter } = require("./handlers/commandRouter");
+const { StatsCollector } = require("./util/statsCollector");
 
 const ROOT = path.resolve(__dirname, "..");
 const CONFIG_PATH = path.join(ROOT, "config.json");
@@ -81,10 +82,18 @@ async function main() {
     partials: [Partials.Channel],
   });
 
+  config._statsCollector = new StatsCollector({
+    sampleIntervalMs: 5000,
+    maxPoints: 720,
+  });
+  
+  config._statsCollector.start();
+  logger.info("Stats collector initialized.");
+
   const presenceManager = new PresenceManager({ client, config, logger });
   const { commands, commandsMap } = loadCommands(logger);
 
-  client.once("ready", async () => {
+  client.once("clientReady", async () => {
     try {
       logger.info(`Logged in as ${client.user.tag}`);
 
