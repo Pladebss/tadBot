@@ -82,11 +82,12 @@ async function main() {
     partials: [Partials.Channel],
   });
 
+
   config._statsCollector = new StatsCollector({
     sampleIntervalMs: 5000,
-    maxPoints: 720,
+    maxPoints: 120960,       // 1 week
+    persistEverySamples: 6,  // save every 30s
   });
-  
   config._statsCollector.start();
   logger.info("Stats collector initialized.");
 

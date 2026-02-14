@@ -1,44 +1,103 @@
 const si = require("systeminformation");
+const fs = require("fs");
+const path = require("path");
 
 class StatsCollector {
-  constructor({ sampleIntervalMs = 5000, maxPoints = 360 } = {}) {
+  constructor({
+    sampleIntervalMs = 5000,
+    maxPoints = 120960, // 7 days @ 5s
+    persistEverySamples = 6, // write to disk every N samples (6*5s=30s)
+    dataDir = path.join(process.cwd(), "data"),
+    dataFileName = "stats.json",
+  } = {}) {
     this.sampleIntervalMs = sampleIntervalMs;
     this.maxPoints = maxPoints;
+    this.persistEverySamples = persistEverySamples;
+
+    this.dataDir = dataDir;
+    this.dataPath = path.join(this.dataDir, dataFileName);
 
     this.timer = null;
-    this.history = {
-      ts: [],
-      cpu: [],
-      mem: [],
-      gpu: [],
-    };
+    this.persistCounter = 0;
+
+    this.history = { ts: [], cpu: [], mem: [], gpu: [] };
+
+    this._loadFromDisk();
   }
 
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => this.sample().catch(() => {}), this.sampleIntervalMs);
-    // take one immediately
     this.sample().catch(() => {});
   }
 
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    // best-effort persist
+    try {
+      this._persistToDisk();
+    } catch {}
   }
 
-  _pushPoint(ts, cpu, mem, gpu) {
-    const h = this.history;
-    h.ts.push(ts);
-    h.cpu.push(cpu);
-    h.mem.push(mem);
-    h.gpu.push(gpu);
+  _ensureDataDir() {
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
+    }
+  }
 
+  _loadFromDisk() {
+    try {
+      this._ensureDataDir();
+      if (!fs.existsSync(this.dataPath)) return;
+
+      const raw = fs.readFileSync(this.dataPath, "utf8");
+      const parsed = JSON.parse(raw);
+
+      // basic shape validation
+      if (
+        parsed &&
+        Array.isArray(parsed.ts) &&
+        Array.isArray(parsed.cpu) &&
+        Array.isArray(parsed.mem) &&
+        Array.isArray(parsed.gpu)
+      ) {
+        this.history = parsed;
+        // trim just in case old file is huge
+        this._trim();
+      }
+    } catch (err) {
+      // if file is corrupt, start fresh (but don't crash bot)
+      this.history = { ts: [], cpu: [], mem: [], gpu: [] };
+    }
+  }
+
+  _persistToDisk() {
+    this._ensureDataDir();
+
+    // atomic write: write temp then rename
+    const tmp = `${this.dataPath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(this.history));
+    fs.renameSync(tmp, this.dataPath);
+  }
+
+  _trim() {
+    const h = this.history;
     while (h.ts.length > this.maxPoints) {
       h.ts.shift();
       h.cpu.shift();
       h.mem.shift();
       h.gpu.shift();
     }
+  }
+
+  _push(ts, cpu, mem, gpu) {
+    const h = this.history;
+    h.ts.push(ts);
+    h.cpu.push(cpu);
+    h.mem.push(mem);
+    h.gpu.push(gpu);
+    this._trim();
   }
 
   async sample() {
@@ -50,17 +109,24 @@ class StatsCollector {
 
     const ts = Date.now();
     const cpuPct = Math.round(load.currentLoad * 10) / 10;
-    const memPct = mem.total > 0 ? Math.round((mem.active / mem.total) * 1000) / 10 : 0;
+    const memPct = mem.total ? Math.round((mem.active / mem.total) * 1000) / 10 : 0;
 
     let gpuPct = 0;
-    // systeminformation tries to expose controller utilization; may be missing depending on driver/hardware
-    if (graphics && Array.isArray(graphics.controllers) && graphics.controllers.length > 0) {
-      const c = graphics.controllers[0];
-      // utilizationGpu is present on some systems; fall back to 0
-      if (typeof c.utilizationGpu === "number") gpuPct = Math.round(c.utilizationGpu * 10) / 10;
+    const c = graphics?.controllers?.[0];
+    if (c && typeof c.utilizationGpu === "number") {
+      gpuPct = Math.round(c.utilizationGpu * 10) / 10;
     }
 
-    this._pushPoint(ts, cpuPct, memPct, gpuPct);
+    this._push(ts, cpuPct, memPct, gpuPct);
+
+    // persist every N samples (default 30s)
+    this.persistCounter++;
+    if (this.persistCounter >= this.persistEverySamples) {
+      this.persistCounter = 0;
+      try {
+        this._persistToDisk();
+      } catch {}
+    }
   }
 
   getHistory({ minutes = 10 } = {}) {
@@ -88,28 +154,20 @@ class StatsCollector {
       si.graphics(),
     ]);
 
-    const upSec = time.uptime || 0;
-
-    const gpuName =
-      graphics?.controllers?.[0]?.model ||
-      graphics?.controllers?.[0]?.name ||
-      "Unknown";
-
-    const gpuUtil =
-      typeof graphics?.controllers?.[0]?.utilizationGpu === "number"
-        ? graphics.controllers[0].utilizationGpu
-        : null;
+    const c = graphics?.controllers?.[0];
+    const gpuName = c?.model || c?.name || "Unknown GPU";
+    const gpuUtil = typeof c?.utilizationGpu === "number" ? c.utilizationGpu : null;
 
     return {
       hostname: osInfo.hostname,
       platform: `${osInfo.distro} ${osInfo.release}`,
       cpu: `${cpu.manufacturer} ${cpu.brand}`,
       gpu: gpuName,
-      uptimeSeconds: upSec,
+      uptimeSeconds: time.uptime || 0,
       cpuLoadPct: Math.round(load.currentLoad * 10) / 10,
       memUsedGB: Math.round((mem.active / 1024 ** 3) * 100) / 100,
       memTotalGB: Math.round((mem.total / 1024 ** 3) * 100) / 100,
-      memPct: mem.total > 0 ? Math.round((mem.active / mem.total) * 1000) / 10 : 0,
+      memPct: mem.total ? Math.round((mem.active / mem.total) * 1000) / 10 : 0,
       gpuPct: gpuUtil != null ? Math.round(gpuUtil * 10) / 10 : null,
     };
   }
