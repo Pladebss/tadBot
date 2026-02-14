@@ -15,3 +15,6 @@ data/state.json
 tools/
 
 package-lock.json
+app_version.txt
+TadBotLauncher/
+temp_update/

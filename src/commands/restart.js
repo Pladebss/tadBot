@@ -5,7 +5,7 @@ const { exec } = require("child_process");
 module.exports = {
   name: "restart",
   allowedChannels: ["1472263993174523976"],
-  requiresSuperUser: true,
+  requiresSuperUser: false,
   data: new SlashCommandBuilder()
     .setName("restart")
     .setDescription("Restart actions.")
@@ -16,17 +16,17 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
 
     if (sub === "bot") {
-      await interaction.reply({ content: "Restarting bot...", ephemeral: true });
+      await interaction.reply({ content: "Restarting bot...", ephemeral: false });
       setTimeout(() => process.exit(0), 500);
       return;
     }
 
     if (sub === "pc") {
       if (!ctx.config.restart?.allowPcRestart) {
-        await interaction.reply({ content: "PC restart is disabled in config.", ephemeral: true });
+        await interaction.reply({ content: "PC restart is disabled in config.", ephemeral: false });
         return;
       }
-      await interaction.reply({ content: "Restarting PC now...", ephemeral: true });
+      await interaction.reply({ content: "Restarting PC now...", ephemeral: false });
       exec("shutdown /r /t 0", (err) => {
         if (err) ctx.logger.error("Failed to execute shutdown", err);
       });
@@ -36,10 +36,10 @@ module.exports = {
     if (sub === "rdp") {
       const batchPath = ctx.config.restart?.rdpRestartBatchPath;
       if (!batchPath) {
-        await interaction.reply({ content: "restart.rdpRestartBatchPath is missing in config.", ephemeral: true });
+        await interaction.reply({ content: "restart.rdpRestartBatchPath is missing in config.", ephemeral: false });
         return;
       }
-      await interaction.reply({ content: "Restarting RDP flow...", ephemeral: true });
+      await interaction.reply({ content: "Restarting RDP flow...", ephemeral: false });
       exec("taskkill /IM mstsc.exe /F", (err) => {
         if (err) ctx.logger.warn("taskkill returned error (mstsc may not be running).");
         exec(`start "" "${batchPath}"`, (err2) => {
@@ -49,6 +49,6 @@ module.exports = {
       return;
     }
 
-    await interaction.reply({ content: "Unknown subcommand.", ephemeral: true });
+    await interaction.reply({ content: "Unknown subcommand.", ephemeral: false });
   },
 };

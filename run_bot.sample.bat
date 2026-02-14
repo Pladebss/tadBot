@@ -1,80 +1,47 @@
-
 @echo off
 setlocal enabledelayedexpansion
-title Discord Booster Bot V3.1 Launcher
+title TadBot Launcher
 
-REM ============================================================
-REM 1) SET YOUR TOKEN HERE (COPY THIS FILE TO run_bot.bat)
-REM ============================================================
+REM ============================
+REM PUT YOUR TOKEN HERE
+REM ============================
 set "DISCORD_BOT_TOKEN=PASTE_TOKEN_HERE"
 
-REM ============================================================
-REM 2) OPTIONAL: Portable Git location (if git not installed)
-REM    Place portable git under: tools\git\cmd\git.exe
-REM ============================================================
-set "REPO_DIR=%~dp0"
-set "TOOLS_DIR=%REPO_DIR%tools"
-set "PORTABLE_GIT_EXE=%TOOLS_DIR%\git\cmd\git.exe"
+set "LAUNCHER_DIR=%~dp0"
+set "APP_DIR=%LAUNCHER_DIR%app"
 
-cd /d "%REPO_DIR%"
+REM Run updater first (safe even if already up to date)
+call "%LAUNCHER_DIR%update.bat"
+if %errorlevel% neq 0 (
+  echo [FATAL] update.bat failed. Not starting bot.
+  pause
+  exit /b 1
+)
 
-REM ============================================================
-REM 3) Resolve git (system git preferred)
-REM ============================================================
-where git >nul 2>nul
-if %errorlevel%==0 (
-  set "GIT=git"
-) else (
-  if exist "%PORTABLE_GIT_EXE%" (
-    set "GIT=%PORTABLE_GIT_EXE%"
+cd /d "%APP_DIR%"
+
+REM Install deps if needed
+if not exist "node_modules" (
+  echo [INFO] Installing dependencies...
+  if exist package-lock.json (
+    call npm ci
   ) else (
-    echo.
-    echo [FATAL] Git not found.
-    echo - Install Git for Windows, OR
-    echo - Place portable git at: %PORTABLE_GIT_EXE%
-    echo.
-    pause
-    exit /b 1
+    call npm install
   )
 )
 
-REM ============================================================
-REM 4) Update only if remote changed
-REM ============================================================
-echo.
-echo [INFO] Checking for updates...
-"%GIT%" fetch --quiet
-
-for /f %%H in ('"%GIT%" rev-parse HEAD') do set "LOCAL=%%H"
-for /f %%H in ('"%GIT%" rev-parse @{u}' ) do set "REMOTE=%%H"
-
-if /I not "%LOCAL%"=="%REMOTE%" (
-  echo [INFO] Update found - pulling latest...
-  "%GIT%" pull --ff-only
-) else (
-  echo [INFO] No update - skipping pull.
-)
-
-REM ============================================================
-REM 5) Install deps
-REM ============================================================
-echo.
-echo [INFO] Installing dependencies...
-if exist package-lock.json (
-  call npm ci
-) else (
-  call npm install
-)
-
-REM ============================================================
-REM 6) Supervisor loop (enables /restart bot)
-REM ============================================================
+REM Supervisor loop
 :run
 echo.
 echo [INFO] Starting bot...
 node src\index.js
+set "EXITCODE=%errorlevel%"
 
-echo.
-echo [WARN] Bot exited. Restarting in 2 seconds...
+if "%EXITCODE%"=="99" (
+  echo [INFO] Bot requested shutdown. Stopping launcher.
+  exit /b 0
+)
+
+echo [WARN] Bot exited (code=%EXITCODE%). Restarting in 2 seconds...
 timeout /t 2 >nul
 goto run
