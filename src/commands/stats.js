@@ -6,6 +6,8 @@ const {
 } = require("discord.js");
 const https = require("https");
 
+const MAX_POINTS = 2000;
+
 function fmtUptime(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
   const d = Math.floor(seconds / 86400);
@@ -80,9 +82,7 @@ function fetchQuickChartPng(chartConfig) {
 
 /**
  * Insert gap breaks by injecting null points whenever there’s a large time jump.
- * Chart.js (used by QuickChart) will not draw a line through nulls.
- *
- * gapThresholdMs: how big a jump constitutes a break
+ * Chart.js will not draw a line through nulls when spanGaps=false.
  */
 function injectNullGaps(ts, seriesList, gapThresholdMs) {
   if (!ts || ts.length === 0) return { ts: [], seriesList: seriesList.map(() => []) };
@@ -94,7 +94,6 @@ function injectNullGaps(ts, seriesList, gapThresholdMs) {
     if (i > 0) {
       const dt = ts[i] - ts[i - 1];
       if (dt > gapThresholdMs) {
-        // Insert a "break" point halfway between
         const mid = ts[i - 1] + Math.floor(dt / 2);
         outTs.push(mid);
         for (let s = 0; s < outSeries.length; s++) outSeries[s].push(null);
@@ -108,44 +107,112 @@ function injectNullGaps(ts, seriesList, gapThresholdMs) {
   return { ts: outTs, seriesList: outSeries };
 }
 
+/**
+ * Downsample to at most maxPoints while preserving null gap points.
+ * We keep:
+ * - all null indices (so gaps remain visible)
+ * - evenly spaced non-null indices
+ * - first + last
+ */
+function downsamplePreserveNulls(ts, seriesList, maxPoints) {
+  const n = ts.length;
+  if (n <= maxPoints) return { ts, seriesList };
+
+  // null indices are "breaks" (we assume all series share same null pattern)
+  const nullIdx = new Set();
+  for (let i = 0; i < n; i++) {
+    if (seriesList[0][i] === null) nullIdx.add(i);
+  }
+
+  // if nulls alone exceed maxPoints, keep all nulls + a small amount around them
+  // (rare unless you have insane gaps)
+  const minKeep = 2; // always keep endpoints
+  const availableForNonNull = Math.max(0, maxPoints - nullIdx.size - minKeep);
+
+  const keep = new Set();
+  keep.add(0);
+  keep.add(n - 1);
+  for (const i of nullIdx) keep.add(i);
+
+  // Collect non-null indices
+  const nonNull = [];
+  for (let i = 0; i < n; i++) if (!nullIdx.has(i)) nonNull.push(i);
+
+  if (availableForNonNull <= 0) {
+    // only keep endpoints + nulls
+    const idxs = Array.from(keep).sort((a, b) => a - b);
+    return pickByIndices(ts, seriesList, idxs);
+  }
+
+  // Evenly sample from nonNull to fit available slots
+  const step = Math.max(1, Math.floor(nonNull.length / availableForNonNull));
+  for (let k = 0; k < nonNull.length; k += step) keep.add(nonNull[k]);
+
+  // Make sure we didn't overshoot (can happen with step rounding)
+  let idxs = Array.from(keep).sort((a, b) => a - b);
+  if (idxs.length > maxPoints) {
+    // trim non-null extras while keeping all nulls + endpoints
+    const must = new Set([0, n - 1, ...nullIdx]);
+    const filtered = [];
+    for (const idx of idxs) {
+      if (must.has(idx)) filtered.push(idx);
+      else if (filtered.length < maxPoints) filtered.push(idx);
+    }
+    idxs = filtered.slice(0, maxPoints).sort((a, b) => a - b);
+  }
+
+  return pickByIndices(ts, seriesList, idxs);
+}
+
+function pickByIndices(ts, seriesList, idxs) {
+  const outTs = [];
+  const outSeries = seriesList.map(() => []);
+  for (const i of idxs) {
+    outTs.push(ts[i]);
+    for (let s = 0; s < seriesList.length; s++) outSeries[s].push(seriesList[s][i]);
+  }
+  return { ts: outTs, seriesList: outSeries };
+}
+
+/**
+ * Smart labels: depends on range size.
+ * - weeks: weekday
+ * - days: hour
+ * - hours: every 5 minutes
+ * - minutes: every 5 seconds
+ * (Blank labels are used to reduce clutter, not data)
+ */
 function makeSmartLabels(ts, rangeMinutes) {
   if (!ts || ts.length === 0) return [];
 
-  const totalMinutes = rangeMinutes;
-
-  // Decide display mode
   let mode;
-  if (totalMinutes >= 10080) mode = "week";      // 1w+
-  else if (totalMinutes >= 1440) mode = "day";   // 1d+
-  else if (totalMinutes >= 60) mode = "hour";    // 1h+
-  else mode = "minute";                          // <1h
+  if (rangeMinutes >= 10080) mode = "week";
+  else if (rangeMinutes >= 1440) mode = "day";
+  else if (rangeMinutes >= 60) mode = "hour";
+  else mode = "minute";
 
-  return ts.map((t, i) => {
+  return ts.map((t) => {
     const d = new Date(t);
 
-    switch (mode) {
-      case "week":
-        // Show only day name
-        return d.toLocaleDateString([], { weekday: "short" });
-
-      case "day":
-        // Show hour only
-        return d.getHours().toString().padStart(2, "0") + ":00";
-
-      case "hour":
-        // Show every 5 minutes only
-        if (d.getMinutes() % 5 !== 0) return "";
-        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-      case "minute":
-      default:
-        // Show every 5 seconds only
-        if (d.getSeconds() % 5 !== 0) return "";
-        return d.toLocaleTimeString([], { minute: "2-digit", second: "2-digit" });
+    // If this is a mid-gap null point, labels can be blank; safe to label normally too.
+    if (mode === "week") {
+      return d.toLocaleDateString([], { weekday: "short" });
     }
+
+    if (mode === "day") {
+      return d.getHours().toString().padStart(2, "0") + ":00";
+    }
+
+    if (mode === "hour") {
+      if (d.getMinutes() % 5 !== 0) return "";
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    // minute mode
+    if (d.getSeconds() % 5 !== 0) return "";
+    return d.toLocaleTimeString([], { minute: "2-digit", second: "2-digit" });
   });
 }
-
 
 function buildChart({ labels, series, title }) {
   return {
@@ -159,7 +226,7 @@ function buildChart({ labels, series, title }) {
         tension: 0.25,
         pointRadius: 0,
         borderWidth: 2,
-        spanGaps: false, // IMPORTANT: do not connect across nulls
+        spanGaps: false, // don't connect across nulls
       })),
     },
     options: {
@@ -228,15 +295,16 @@ module.exports = {
     const row = new ActionRowBuilder().addComponents(menu);
 
     const overviewText =
-      `**Host:** \`${snapshot.hostname}\`\n` +
-      `**OS:** \`${snapshot.platform}\`\n` +
-      `**Uptime:** \`${fmtUptime(snapshot.uptimeSeconds)}\`\n` +
-      `**CPU:** \`${snapshot.cpu}\`\n` +
-      `**GPU:** \`${snapshot.gpu}\`\n` +
-      `**CPU Load:** \`${snapshot.cpuLoadPct}\`%\n` +
-      `**Memory:** \`${snapshot.memUsedGB}\` GB / \`${snapshot.memTotalGB}\` GB (\`${snapshot.memPct}\`%)\n` +
+      `**Host:** ${snapshot.hostname}\n` +
+      `**OS:** ${snapshot.platform}\n` +
+      `**Uptime:** ${fmtUptime(snapshot.uptimeSeconds)}\n` +
+      `**CPU:** ${snapshot.cpu}\n` +
+      `**GPU:** ${snapshot.gpu}\n` +
+      `**CPU Load:** ${snapshot.cpuLoadPct}%\n` +
+      `**Memory:** ${snapshot.memUsedGB} / ${snapshot.memTotalGB} GB (${snapshot.memPct}%)\n` +
       (snapshot.gpuPct != null ? `**GPU Util:** ${snapshot.gpuPct}%\n` : `**GPU Util:** (not available)\n`) +
-      `**Range:** ${rangeLabel}\n`;
+      `**Range:** ${rangeLabel}\n` +
+      `**Chart cap:** ${MAX_POINTS} points\n`;
 
     await interaction.editReply({
       content: overviewText,
@@ -245,7 +313,6 @@ module.exports = {
     });
 
     const msg = await interaction.fetchReply();
-
     const collector = msg.createMessageComponentCollector({ time: 5 * 60_000 });
 
     function getHistorySafe(minutes) {
@@ -254,8 +321,6 @@ module.exports = {
       return h;
     }
 
-    // gap threshold: if we miss more than ~2.5x the sample interval, show a break
-    // default sampleInterval is 5s; so 12s is a reasonable "gap"
     const gapThresholdMs = Math.max(12_000, (statsCollector.sampleIntervalMs || 5000) * 2.5);
 
     async function renderMetric(minutes, metric) {
@@ -264,16 +329,19 @@ module.exports = {
 
       const seriesRaw = metric === "cpu" ? h.cpu : metric === "mem" ? h.mem : h.gpu;
 
+      // 1) inject gap nulls
       const injected = injectNullGaps(h.ts, [seriesRaw], gapThresholdMs);
-      const labels = makeSmartLabels(injected.ts, rangeMinutes);
-
+      // 2) downsample to cap
+      const down = downsamplePreserveNulls(injected.ts, injected.seriesList, MAX_POINTS);
+      // 3) smart labels
+      const labels = makeSmartLabels(down.ts, minutes);
 
       const label = metric === "cpu" ? "CPU %" : metric === "mem" ? "Memory %" : "GPU %";
 
       const config = buildChart({
         labels,
         title: `${label} (last ${rangeLabel})`,
-        series: [{ label, data: injected.seriesList[0] }],
+        series: [{ label, data: down.seriesList[0] }],
       });
 
       const png = await fetchQuickChartPng(config);
@@ -284,17 +352,20 @@ module.exports = {
       const h = getHistorySafe(minutes);
       if (!h) throw new Error("Not enough history yet. Wait a bit and try again.");
 
+      // 1) inject gap nulls
       const injected = injectNullGaps(h.ts, [h.cpu, h.mem, h.gpu], gapThresholdMs);
-      const labels = makeSmartLabels(injected.ts, rangeMinutes);
-
+      // 2) downsample to cap
+      const down = downsamplePreserveNulls(injected.ts, injected.seriesList, MAX_POINTS);
+      // 3) smart labels
+      const labels = makeSmartLabels(down.ts, minutes);
 
       const config = buildChart({
         labels,
         title: `CPU / Memory / GPU (last ${rangeLabel})`,
         series: [
-          { label: "CPU %", data: injected.seriesList[0] },
-          { label: "Memory %", data: injected.seriesList[1] },
-          { label: "GPU %", data: injected.seriesList[2] },
+          { label: "CPU %", data: down.seriesList[0] },
+          { label: "Memory %", data: down.seriesList[1] },
+          { label: "GPU %", data: down.seriesList[2] },
         ],
       });
 
@@ -307,7 +378,7 @@ module.exports = {
         `**Uptime:** ${fmtUptime(snap.uptimeSeconds)} | **CPU:** ${snap.cpuLoadPct}% | ` +
         `**MEM:** ${snap.memPct}%` +
         (snap.gpuPct != null ? ` | **GPU:** ${snap.gpuPct}%` : "") +
-        `\n**Range:** ${rangeLabel}`;
+        `\n**Range:** ${rangeLabel} | **Chart cap:** ${MAX_POINTS}`;
 
       await interaction.editReply({ content: base, files, components: [row] });
     }
@@ -318,7 +389,6 @@ module.exports = {
       }
 
       await i.deferUpdate();
-
       const value = i.values[0];
 
       try {
