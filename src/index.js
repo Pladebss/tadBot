@@ -46,16 +46,14 @@ function validateConfig(cfg) {
 }
 
 function loadCommands(logger) {
-  const commandsPath = path.join(__dirname, "commands");
-  const files = fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"));
+  const manifest = require("./commands/_manifest");
 
   const commands = [];
   const map = new Collection();
 
-  for (const file of files) {
-    const mod = require(path.join(commandsPath, file));
+  for (const mod of manifest) {
     if (!mod?.name || !mod?.data || typeof mod.execute !== "function") {
-      throw new Error(`Invalid command module: ${file}`);
+      throw new Error(`Invalid command module in manifest.`);
     }
     commands.push(mod);
     map.set(mod.name, mod);
