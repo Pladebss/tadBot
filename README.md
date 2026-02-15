@@ -1,5 +1,6 @@
 # 📊 TadBot – Discord Booster + PC Stats Bot
 **Note: AI was used in the creation of this bot. I am trying to be fully transparent with this statement!**
+
 A production-ready Discord bot built with **discord.js** that:
 
 * Monitors boost messages
