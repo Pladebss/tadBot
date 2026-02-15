@@ -1,31 +1,64 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Build TadSyncLauncher.exe
+title TadSync - Build Launcher
 
-set "ROOT=%~dp0"
-set "OUTDIR=%ROOT%executable"
-set "LAUNCHER_PROJ=%ROOT%launcher\TadSyncLauncher\TadSyncLauncher.csproj"
-set "ASSETS_DIR=%ROOT%launcher\TadSyncLauncher\Assets"
-set "BOTCORE_EXE=%OUTDIR%\botcore.exe"
+echo ============================================
+echo          TadSync - Build Launcher
+echo ============================================
 
-where dotnet >nul 2>nul || (echo [FATAL] dotnet not found & pause & exit /b 1)
+set "REPO=%~dp0"
+set "PROJ=%REPO%launcher\TadSyncLauncher\TadSyncLauncher.csproj"
 
-if not exist "%BOTCORE_EXE%" (
-  echo [FATAL] botcore.exe missing: %BOTCORE_EXE%
-  echo Run build_botcore.bat first.
+set "OUTROOT=%REPO%executable"
+set "OUTLAUNCH=%OUTROOT%\launcher"
+set "PUBLISH=%REPO%temp_publish_launcher"
+
+set "EXE_NAME=TadSyncLauncher.exe"
+
+echo [INFO] Repo   : %REPO%
+echo [INFO] Project: %PROJ%
+echo [INFO] Out    : %OUTLAUNCH%
+echo.
+
+if not exist "%PROJ%" (
+  echo [FATAL] Launcher project not found:
+  echo        %PROJ%
   pause
   exit /b 1
 )
 
-if not exist "%ASSETS_DIR%" mkdir "%ASSETS_DIR%"
+where dotnet >nul 2>nul
+if errorlevel 1 (
+  echo [FATAL] dotnet not found in PATH.
+  echo Install .NET SDK 8 and reopen terminal.
+  pause
+  exit /b 1
+)
 
-echo [INFO] Copying botcore.exe into launcher assets...
-copy /y "%BOTCORE_EXE%" "%ASSETS_DIR%\botcore.exe" >nul
+REM ============================================================
+REM Clean output folders
+REM ============================================================
+if exist "%PUBLISH%" rmdir /s /q "%PUBLISH%"
+if exist "%OUTLAUNCH%" rmdir /s /q "%OUTLAUNCH%"
 
-echo [INFO] Publishing launcher (single exe)...
-dotnet publish "%LAUNCHER_PROJ%" -c Release -r win-x64 --self-contained true ^
+mkdir "%PUBLISH%" >nul 2>nul
+mkdir "%OUTLAUNCH%" >nul 2>nul
+
+REM ============================================================
+REM Publish (true single-file) to temp folder
+REM ============================================================
+echo [INFO] Publishing single-file launcher...
+dotnet publish "%PROJ%" ^
+  -c Release ^
+  -r win-x64 ^
+  --self-contained true ^
+  -o "%PUBLISH%" ^
   /p:PublishSingleFile=true ^
-  /p:IncludeNativeLibrariesForSelfExtract=true
+  /p:IncludeNativeLibrariesForSelfExtract=true ^
+  /p:EnableCompressionInSingleFile=true ^
+  /p:DebugType=None ^
+  /p:DebugSymbols=false ^
+  /p:PublishTrimmed=false
 
 if errorlevel 1 (
   echo [FATAL] dotnet publish failed
@@ -33,18 +66,34 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "PUBDIR=%ROOT%launcher\TadSyncLauncher\bin\Release\net8.0-windows\win-x64\publish"
-if not exist "%PUBDIR%\TadSyncLauncher.exe" (
-  echo [FATAL] Publish output not found at %PUBDIR%
+REM ============================================================
+REM Copy ONLY the exe we care about
+REM ============================================================
+if not exist "%PUBLISH%\%EXE_NAME%" (
+  echo [FATAL] Expected launcher exe not found:
+  echo        %PUBLISH%\%EXE_NAME%
+  echo.
+  echo Files produced:
+  dir /b "%PUBLISH%"
   pause
   exit /b 1
 )
 
-if not exist "%OUTDIR%" mkdir "%OUTDIR%"
+copy /y "%PUBLISH%\%EXE_NAME%" "%OUTLAUNCH%\%EXE_NAME%" >nul
+if errorlevel 1 (
+  echo [FATAL] Failed to copy launcher exe to output.
+  pause
+  exit /b 1
+)
 
-echo [INFO] Copying final exe to executable\TadSyncLauncher.exe
-copy /y "%PUBDIR%\TadSyncLauncher.exe" "%OUTDIR%\TadSyncLauncher.exe" >nul
+REM ============================================================
+REM Delete temp publish folder to prevent "file dump"
+REM ============================================================
+rmdir /s /q "%PUBLISH%"
 
-echo [DONE] %OUTDIR%\TadSyncLauncher.exe
+echo.
+echo [DONE] Launcher built:
+echo   %OUTLAUNCH%\%EXE_NAME%
+echo.
 pause
 exit /b 0
