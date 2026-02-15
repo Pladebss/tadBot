@@ -23,17 +23,23 @@ namespace TadSyncLauncher
     public string GatheringActivityTemplate { get; set; } = "Gathering: {field}";
   }
 
-  public sealed class BotConfig
-  {
-    public string DiscordToken { get; set; } = "";
-    public string MonitorChannelId { get; set; } = "";
-    public List<string> BoostDestChannelIds { get; set; } = new();
-    public Dictionary<string, string> FieldMapping { get; set; } = new();
-    public List<string> SuperUsers { get; set; } = new();
+public sealed class SlashRegistrationConfig
+{
+  public bool GuildOnly { get; set; } = true;
+  public List<string> GuildIds { get; set; } = new();
+}
 
-    public PresenceConfig Presence { get; set; } = new();
-    public SlashRegistration SlashRegistration { get; set; } = new();
-  }
+public sealed class BotConfig
+{
+  public string? DiscordToken { get; set; }
+  public string? MonitorChannelId { get; set; }
+  public List<string> BoostDestChannelIds { get; set; } = new();
+  public Dictionary<string, string> FieldMapping { get; set; } = new();
+  public List<string> SuperUsers { get; set; } = new();
+  public PresenceConfig Presence { get; set; } = new();
+  public SlashRegistrationConfig SlashRegistration { get; set; } = new();
+}
+
 
   public sealed class BotStatus
   {

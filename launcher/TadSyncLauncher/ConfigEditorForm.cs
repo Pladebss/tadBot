@@ -13,6 +13,9 @@ namespace TadSyncLauncher
     private readonly TextBox _monitor = new();
     private readonly NumericUpDown _ttl = new();
 
+    private readonly CheckBox _guildOnly = new();
+    private readonly DataGridView _guildIds = new();
+
     private readonly DataGridView _dest = new();
     private readonly DataGridView _mapping = new();
     private readonly DataGridView _super = new();
@@ -23,13 +26,16 @@ namespace TadSyncLauncher
     {
       Text = "Edit TadSync Config";
       StartPosition = FormStartPosition.CenterParent;
-      ClientSize = new Size(860, 700);
+      ClientSize = new Size(860, 720);
       FormBorderStyle = FormBorderStyle.Sizable;
-      MinimumSize = new Size(780, 620);
+      MinimumSize = new Size(780, 640);
 
       Theme.ApplyForm(this);
 
       _cfg = JsonUtil.Read<BotConfig>(AppPaths.ConfigPath) ?? new BotConfig();
+      _cfg.Presence ??= new PresenceConfig();
+      _cfg.SlashRegistration ??= new SlashRegistrationConfig();
+      _cfg.SlashRegistration.GuildIds ??= new List<string>();
 
       BuildUI();
       ApplyTheme();
@@ -50,6 +56,7 @@ namespace TadSyncLauncher
       Theme.StyleGrid(_dest);
       Theme.StyleGrid(_mapping);
       Theme.StyleGrid(_super);
+      Theme.StyleGrid(_guildIds);
 
       _tabs.Appearance = TabAppearance.Normal;
       _tabs.SizeMode = TabSizeMode.Normal;
@@ -57,8 +64,8 @@ namespace TadSyncLauncher
 
     private void BuildUI()
     {
-      // Top header card
-      var header = Theme.Card(18, 18, ClientSize.Width - 36, 120);
+      // Header card
+      var header = Theme.Card(18, 18, ClientSize.Width - 36, 132);
       header.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
       Controls.Add(header);
 
@@ -72,19 +79,23 @@ namespace TadSyncLauncher
       };
       header.Controls.Add(title);
 
-      header.Controls.Add(Theme.MutedLabel("Edits are saved to AppData config.json. Mapping matches Boosted: <FieldName> anywhere in the message/embed.", 16, 44));
+      header.Controls.Add(
+        Theme.MutedLabel(
+          "Edits are saved to AppData config.json. Mapping matches “Boosted: <FieldName>” anywhere in message or embed.",
+          16, 44)
+      );
 
       // Token row
-      AddLabelTo(header, "Discord Token", 16, 72);
-      _token.Location = new Point(160, 68);
+      AddLabelTo(header, "Discord Token", 16, 80);
+      _token.Location = new Point(160, 76);
       _token.Size = new Size(header.Width - 176, 26);
       _token.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
       _token.UseSystemPasswordChar = true;
       _token.Text = _cfg.DiscordToken ?? "";
       header.Controls.Add(_token);
 
-      // Middle card: essentials
-      var essentials = Theme.Card(18, 150, ClientSize.Width - 36, 70);
+      // Essentials card
+      var essentials = Theme.Card(18, 164, ClientSize.Width - 36, 90);
       essentials.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
       Controls.Add(essentials);
 
@@ -102,17 +113,25 @@ namespace TadSyncLauncher
       _ttl.Value = Math.Clamp(_cfg.Presence?.TtlMinutes ?? 15, 1, 240);
       essentials.Controls.Add(_ttl);
 
-      // Tabs (resizable)
-      _tabs.Location = new Point(18, 232);
-      _tabs.Size = new Size(ClientSize.Width - 36, ClientSize.Height - 232 - 90);
+      _guildOnly.Text = "Register slash commands to specific guild(s) only (faster updates)";
+      _guildOnly.AutoSize = true;
+      _guildOnly.Location = new Point(16, 54);
+      _guildOnly.Checked = _cfg.SlashRegistration?.GuildOnly ?? true;
+      _guildOnly.ForeColor = Theme.Muted;
+      essentials.Controls.Add(_guildOnly);
+
+      // Tabs
+      _tabs.Location = new Point(18, 268);
+      _tabs.Size = new Size(ClientSize.Width - 36, ClientSize.Height - 268 - 90);
       _tabs.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
       Controls.Add(_tabs);
 
       BuildDestTab();
       BuildMappingTab();
       BuildSuperTab();
+      BuildSlashTab();
 
-      // Footer actions (fixed area)
+      // Footer
       var footer = new Panel
       {
         Dock = DockStyle.Bottom,
@@ -146,16 +165,24 @@ namespace TadSyncLauncher
         btnSave.Location = new Point(footer.Width - btnSave.Width - 16, 18);
         btnCancel.Location = new Point(btnSave.Left - btnCancel.Width - 12, 18);
       };
+
+      // live enable/disable grid
+      _guildOnly.CheckedChanged += (_, __) => UpdateGuildGridEnabled();
+      UpdateGuildGridEnabled();
+    }
+
+    private void UpdateGuildGridEnabled()
+    {
+      bool enabled = _guildOnly.Checked;
+      _guildIds.Enabled = enabled;
     }
 
     private void BuildDestTab()
     {
-      var tab = new TabPage("Dest Channels");
-      tab.BackColor = Theme.Bg;
+      var tab = new TabPage("Dest Channels") { BackColor = Theme.Bg };
       _tabs.TabPages.Add(tab);
 
-      var hint = Theme.MutedLabel("These channels receive the plaintext FollowTo messages.", 12, 12);
-      tab.Controls.Add(hint);
+      tab.Controls.Add(Theme.MutedLabel("These channels receive the plaintext FollowTo messages.", 12, 12));
 
       _dest.Location = new Point(12, 42);
       _dest.Size = new Size(tab.ClientSize.Width - 24, tab.ClientSize.Height - 54);
@@ -177,12 +204,10 @@ namespace TadSyncLauncher
 
     private void BuildMappingTab()
     {
-      var tab = new TabPage("Field Mapping");
-      tab.BackColor = Theme.Bg;
+      var tab = new TabPage("Field Mapping") { BackColor = Theme.Bg };
       _tabs.TabPages.Add(tab);
 
-      var hint = Theme.MutedLabel("If a message contains Boosted: <FieldName>, TadBot sends the matching Message to Send.", 12, 12);
-      tab.Controls.Add(hint);
+      tab.Controls.Add(Theme.MutedLabel("If message contains “Boosted: <FieldName>”, bot sends the mapped message.", 12, 12));
 
       _mapping.Location = new Point(12, 42);
       _mapping.Size = new Size(tab.ClientSize.Width - 24, tab.ClientSize.Height - 54);
@@ -208,12 +233,10 @@ namespace TadSyncLauncher
 
     private void BuildSuperTab()
     {
-      var tab = new TabPage("Super Users");
-      tab.BackColor = Theme.Bg;
+      var tab = new TabPage("Super Users") { BackColor = Theme.Bg };
       _tabs.TabPages.Add(tab);
 
-      var hint = Theme.MutedLabel("Users who can run restricted commands. (They do NOT bypass channel restrictions.)", 12, 12);
-      tab.Controls.Add(hint);
+      tab.Controls.Add(Theme.MutedLabel("Users who can run restricted commands (no channel bypass).", 12, 12));
 
       _super.Location = new Point(12, 42);
       _super.Size = new Size(tab.ClientSize.Width - 24, tab.ClientSize.Height - 54);
@@ -231,6 +254,38 @@ namespace TadSyncLauncher
 
       foreach (var id in _cfg.SuperUsers ?? new List<string>())
         _super.Rows.Add(id);
+    }
+
+    private void BuildSlashTab()
+    {
+      var tab = new TabPage("Slash Registration") { BackColor = Theme.Bg };
+      _tabs.TabPages.Add(tab);
+
+      tab.Controls.Add(Theme.MutedLabel(
+        "If GuildOnly is enabled, you MUST provide at least one Guild ID or the bot will not start.",
+        12, 12));
+
+      tab.Controls.Add(Theme.MutedLabel(
+        "Guild-only updates appear instantly. Global updates can take a while.",
+        12, 32));
+
+      _guildIds.Location = new Point(12, 64);
+      _guildIds.Size = new Size(tab.ClientSize.Width - 24, tab.ClientSize.Height - 76);
+      _guildIds.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+
+      _guildIds.RowHeadersVisible = false;
+      _guildIds.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+      _guildIds.AllowUserToAddRows = true;
+      _guildIds.AllowUserToDeleteRows = true;
+
+      _guildIds.Columns.Clear();
+      _guildIds.Columns.Add("GuildId", "Guild ID");
+
+      tab.Controls.Add(_guildIds);
+
+      var ids = _cfg.SlashRegistration?.GuildIds ?? new List<string>();
+      foreach (var id in ids)
+        _guildIds.Rows.Add(id);
     }
 
     private static void AddLabelTo(Control parent, string text, int x, int y)
@@ -296,6 +351,10 @@ namespace TadSyncLauncher
       _cfg.SuperUsers = CollectOneCol(_super);
       _cfg.FieldMapping = CollectMap(_mapping);
 
+      _cfg.SlashRegistration ??= new SlashRegistrationConfig();
+      _cfg.SlashRegistration.GuildOnly = _guildOnly.Checked;
+      _cfg.SlashRegistration.GuildIds = CollectOneCol(_guildIds);
+
       if (_cfg.BoostDestChannelIds.Count < 1)
       {
         MessageBox.Show("Add at least one destination channel ID.", "Config", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -304,6 +363,11 @@ namespace TadSyncLauncher
       if (_cfg.FieldMapping.Count < 1)
       {
         MessageBox.Show("Add at least one field mapping.", "Config", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return;
+      }
+      if (_cfg.SlashRegistration.GuildOnly && _cfg.SlashRegistration.GuildIds.Count < 1)
+      {
+        MessageBox.Show("GuildOnly is enabled — add at least one Guild ID (Slash Registration tab).", "Config", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         return;
       }
 

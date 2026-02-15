@@ -7,251 +7,455 @@ namespace TadSyncLauncher
 {
   public sealed class SetupWizardForm : Form
   {
-    private readonly Panel _content = new();
-    private readonly Panel _footer = new();
+    private readonly Panel _card;
+    private readonly Panel _footer;
+
+    private readonly Button _btnBack = new();
+    private readonly Button _btnNext = new();
+    private readonly Button _btnCancel = new();
+
+    private readonly FlowLayoutPanel _steps = new();
+
+    private int _stepIndex = 0;
 
     private readonly TextBox _token = new();
     private readonly TextBox _monitor = new();
-    private readonly TextBox _dest = new();
     private readonly NumericUpDown _ttl = new();
-    private readonly DataGridView _mapping = new();
 
-    private readonly Button _btnFinish = new();
-    private readonly Button _btnCancel = new();
+    private readonly DataGridView _dest = new();
+    private readonly DataGridView _mapping = new();
+    private readonly DataGridView _super = new();
+
+    private readonly CheckBox _guildOnly = new();
+    private readonly DataGridView _guildIds = new();
+
+    private BotConfig _cfg = new();
+
+    private Panel _stepPanel = new();
 
     public SetupWizardForm()
     {
       Text = "TadSync Setup Wizard";
-      StartPosition = FormStartPosition.CenterParent;
-      ClientSize = new Size(820, 620);
+      StartPosition = FormStartPosition.CenterScreen;
+      ClientSize = new Size(860, 660);
+      MinimumSize = new Size(780, 600);
       FormBorderStyle = FormBorderStyle.Sizable;
-      MinimumSize = new Size(760, 560);
 
       Theme.ApplyForm(this);
-      AppPaths.EnsureDirs();
 
-      BuildLayout();
-    }
+      _cfg = JsonUtil.Read<BotConfig>(AppPaths.ConfigPath) ?? new BotConfig();
+      _cfg.Presence ??= new PresenceConfig();
+      _cfg.SlashRegistration ??= new SlashRegistrationConfig();
+      _cfg.SlashRegistration.GuildIds ??= new List<string>();
 
-    private void BuildLayout()
-    {
-      // Scrollable content area
-      _content.Dock = DockStyle.Fill;
-      _content.AutoScroll = true;
-      _content.BackColor = Theme.Bg;
-      Controls.Add(_content);
+      _card = Theme.Card(18, 18, ClientSize.Width - 36, ClientSize.Height - 120);
+      _card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      Controls.Add(_card);
 
-      // Fixed footer (always visible)
-      _footer.Dock = DockStyle.Bottom;
-      _footer.Height = 72;
-      _footer.BackColor = Theme.Panel;
-      _footer.Padding = new Padding(14, 12, 14, 12);
-      _footer.BorderStyle = BorderStyle.FixedSingle;
+      _footer = new Panel
+      {
+        Dock = DockStyle.Bottom,
+        Height = 92,
+        BackColor = Theme.Panel,
+        BorderStyle = BorderStyle.FixedSingle,
+        Padding = new Padding(16, 16, 16, 16)
+      };
       Controls.Add(_footer);
 
-      _btnFinish.Text = "Finish Setup";
-      _btnFinish.Size = new Size(140, 36);
-      _btnFinish.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-      _btnFinish.Location = new Point(_footer.Width - 160, 16);
-      _btnFinish.Click += (_, __) => Finish();
-      Theme.StyleButton(_btnFinish, primary: true);
+      BuildFooter();
+      BuildStepsBar();
+      BuildStepHost();
+
+      ApplyTheme();
+      RenderStep();
+    }
+
+    private void ApplyTheme()
+    {
+      Theme.StyleTextBox(_token);
+      Theme.StyleTextBox(_monitor);
+      Theme.StyleNumeric(_ttl);
+
+      Theme.StyleGrid(_dest);
+      Theme.StyleGrid(_mapping);
+      Theme.StyleGrid(_super);
+      Theme.StyleGrid(_guildIds);
+
+      Theme.StyleButton(_btnBack, primary: false);
+      Theme.StyleButton(_btnNext, primary: true);
+      Theme.StyleButton(_btnCancel, primary: false);
+    }
+
+    private void BuildFooter()
+    {
+      _btnBack.Text = "Back";
+      _btnBack.Size = new Size(120, 40);
+      _btnBack.Location = new Point(16, 20);
+      _btnBack.Click += (_, __) =>
+      {
+        if (_stepIndex > 0) _stepIndex--;
+        RenderStep();
+      };
 
       _btnCancel.Text = "Cancel";
-      _btnCancel.Size = new Size(110, 36);
-      _btnCancel.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-      _btnCancel.Location = new Point(_footer.Width - 280, 16);
+      _btnCancel.Size = new Size(120, 40);
+      _btnCancel.Location = new Point(148, 20);
       _btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
-      Theme.StyleButton(_btnCancel, primary: false);
 
+      _btnNext.Text = "Next";
+      _btnNext.Size = new Size(140, 40);
+      _btnNext.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      _btnNext.Location = new Point(_footer.Width - _btnNext.Width - 16, 20);
+      _btnNext.Click += (_, __) =>
+      {
+        if (!ValidateCurrentStep()) return;
+
+        if (_stepIndex < 3)
+        {
+          _stepIndex++;
+          RenderStep();
+          return;
+        }
+
+        SaveConfig();
+        DialogResult = DialogResult.OK;
+        Close();
+      };
+
+      _footer.Controls.Add(_btnBack);
       _footer.Controls.Add(_btnCancel);
-      _footer.Controls.Add(_btnFinish);
+      _footer.Controls.Add(_btnNext);
 
       _footer.Resize += (_, __) =>
       {
-        _btnFinish.Location = new Point(_footer.Width - _btnFinish.Width - 16, 16);
-        _btnCancel.Location = new Point(_btnFinish.Left - _btnCancel.Width - 12, 16);
+        _btnNext.Location = new Point(_footer.Width - _btnNext.Width - 16, 20);
       };
+    }
 
-      // Content inside scroll panel
-      int pad = 18;
-      int y = 18;
+    private void BuildStepsBar()
+    {
+      _steps.FlowDirection = FlowDirection.LeftToRight;
+      _steps.WrapContents = false;
+      _steps.AutoScroll = true;
+      _steps.Location = new Point(18, 18);
+      _steps.Size = new Size(_card.Width - 36, 46);
+      _steps.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      _steps.BackColor = Color.Transparent;
 
-      var title = new Label
+      _card.Controls.Add(_steps);
+
+      AddStepPill("1) Token");
+      AddStepPill("2) Channels");
+      AddStepPill("3) Mapping");
+      AddStepPill("4) Slash");
+
+      void AddStepPill(string text)
       {
-        Text = "First-time Setup",
-        AutoSize = true,
-        Font = Theme.TitleFont(this),
-        Location = new Point(pad, y),
-        ForeColor = Theme.Text
+        var pill = new Label
+        {
+          Text = text,
+          AutoSize = true,
+          Padding = new Padding(12, 8, 12, 8),
+          Margin = new Padding(0, 0, 10, 0),
+          BackColor = Theme.Panel,       // ✅ replaced Theme.CardBg
+          ForeColor = Theme.Muted,
+          BorderStyle = BorderStyle.FixedSingle
+        };
+        _steps.Controls.Add(pill);
+      }
+    }
+
+    private void BuildStepHost()
+    {
+      _stepPanel = new Panel
+      {
+        Location = new Point(18, 72),
+        Size = new Size(_card.Width - 36, _card.Height - 90),
+        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+        BackColor = Theme.Bg
       };
-      _content.Controls.Add(title);
+      _card.Controls.Add(_stepPanel);
+    }
 
-      y += 44;
-      _content.Controls.Add(Theme.MutedLabel("Fill this out once. You can edit later from the main control panel.", pad, y));
-      y += 28;
+    private void RenderStep()
+    {
+      _stepPanel.Controls.Clear();
 
-      // Card: Essentials
-      var card1 = Theme.Card(pad, y, 760, 180);
-      _content.Controls.Add(card1);
+      // Highlight active pill
+      for (int i = 0; i < _steps.Controls.Count; i++)
+      {
+        var pill = (Label)_steps.Controls[i];
+        bool active = (i == _stepIndex);
 
-      card1.Controls.Add(Theme.H2("Essentials", 14, 14, this));
-      card1.Controls.Add(Theme.MutedLabel("Token + channels. Destination channels receive the FollowTo messages.", 14, 40));
+        pill.BackColor = active ? Theme.Accent : Theme.Panel; // ✅ no Theme.CardBg
+        pill.ForeColor = active ? Color.White : Theme.Muted;
+      }
 
-      int cy = 72;
-      AddLabeledText(card1, "Discord Bot Token", _token, 14, cy, 720, mask: true);
-      cy += 44;
+      _btnBack.Enabled = _stepIndex > 0;
+      _btnNext.Text = _stepIndex == 3 ? "Finish" : "Next";
 
-      AddLabeledText(card1, "Monitor Channel ID", _monitor, 14, cy, 320);
-      AddLabeledText(card1, "Dest Channel IDs (comma-separated)", _dest, 350, cy, 384);
-      cy += 44;
+      if (_stepIndex == 0) BuildStepToken();
+      else if (_stepIndex == 1) BuildStepChannels();
+      else if (_stepIndex == 2) BuildStepMapping();
+      else BuildStepSlash();
+    }
 
-      AddLabeledNumeric(card1, "Gathering TTL (minutes)", _ttl, 14, cy, 140, 1, 240, 15);
+    private void BuildStepToken()
+    {
+      _stepPanel.Controls.Add(Title("Discord Token + Basics", 12, 10));
+      _stepPanel.Controls.Add(Theme.MutedLabel("Saved to AppData config.json. You can edit later in the control panel.", 12, 44));
 
-      y += card1.Height + 14;
+      AddLabel("Discord Token", 12, 82);
+      _token.Location = new Point(160, 78);
+      _token.Size = new Size(_stepPanel.Width - 180, 26);
+      _token.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      _token.UseSystemPasswordChar = true;
+      _token.Text = _cfg.DiscordToken ?? "";
+      _stepPanel.Controls.Add(_token);
 
-      // Card: Mapping
-      var card2 = Theme.Card(pad, y, 760, 300);
-      _content.Controls.Add(card2);
+      AddLabel("Monitor Channel ID", 12, 122);
+      _monitor.Location = new Point(160, 118);
+      _monitor.Size = new Size(260, 26);
+      _monitor.Text = _cfg.MonitorChannelId ?? "";
+      _stepPanel.Controls.Add(_monitor);
 
-      card2.Controls.Add(Theme.H2("Field Mapping", 14, 14, this));
-      card2.Controls.Add(Theme.MutedLabel("If any message/embed contains Boosted: <FieldName>, send the mapped plaintext.", 14, 40));
+      AddLabel("Gather TTL (minutes)", 450, 122);
+      _ttl.Location = new Point(620, 118);
+      _ttl.Size = new Size(100, 26);
+      _ttl.Minimum = 1;
+      _ttl.Maximum = 240;
+      _ttl.Value = Math.Clamp(_cfg.Presence?.TtlMinutes ?? 15, 1, 240);
+      _stepPanel.Controls.Add(_ttl);
 
-      _mapping.Location = new Point(14, 72);
-      _mapping.Size = new Size(720, 210);
+      Theme.StyleTextBox(_token);
+      Theme.StyleTextBox(_monitor);
+      Theme.StyleNumeric(_ttl);
+    }
+
+    private void BuildStepChannels()
+    {
+      _stepPanel.Controls.Add(Title("Destination Channels + Super Users", 12, 10));
+      _stepPanel.Controls.Add(Theme.MutedLabel("Dest Channels receive FollowTo messages. Super Users can run restricted commands.", 12, 44));
+
+      var tabs = new TabControl
+      {
+        Location = new Point(12, 78),
+        Size = new Size(_stepPanel.Width - 24, _stepPanel.Height - 90),
+        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+      };
+      _stepPanel.Controls.Add(tabs);
+
+      var tabDest = new TabPage("Dest Channels") { BackColor = Theme.Bg };
+      var tabSuper = new TabPage("Super Users") { BackColor = Theme.Bg };
+      tabs.TabPages.Add(tabDest);
+      tabs.TabPages.Add(tabSuper);
+
+      _dest.Location = new Point(12, 12);
+      _dest.Size = new Size(tabDest.ClientSize.Width - 24, tabDest.ClientSize.Height - 24);
+      _dest.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      _dest.RowHeadersVisible = false;
+      _dest.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+      _dest.AllowUserToAddRows = true;
+      _dest.AllowUserToDeleteRows = true;
+      _dest.Columns.Clear();
+      _dest.Columns.Add("ChannelId", "Channel ID");
+      tabDest.Controls.Add(_dest);
+
+      _dest.Rows.Clear();
+      foreach (var id in _cfg.BoostDestChannelIds ?? new List<string>())
+        _dest.Rows.Add(id);
+
+      _super.Location = new Point(12, 12);
+      _super.Size = new Size(tabSuper.ClientSize.Width - 24, tabSuper.ClientSize.Height - 24);
+      _super.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      _super.RowHeadersVisible = false;
+      _super.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+      _super.AllowUserToAddRows = true;
+      _super.AllowUserToDeleteRows = true;
+      _super.Columns.Clear();
+      _super.Columns.Add("UserId", "User ID");
+      tabSuper.Controls.Add(_super);
+
+      _super.Rows.Clear();
+      foreach (var id in _cfg.SuperUsers ?? new List<string>())
+        _super.Rows.Add(id);
+
+      Theme.StyleGrid(_dest);
+      Theme.StyleGrid(_super);
+    }
+
+    private void BuildStepMapping()
+    {
+      _stepPanel.Controls.Add(Title("Field Mapping", 12, 10));
+      _stepPanel.Controls.Add(Theme.MutedLabel("Add FieldName -> Message to Send. Triggered by “Boosted: <FieldName>”.", 12, 44));
+
+      _mapping.Location = new Point(12, 78);
+      _mapping.Size = new Size(_stepPanel.Width - 24, _stepPanel.Height - 90);
+      _mapping.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      _mapping.RowHeadersVisible = false;
+      _mapping.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
       _mapping.AllowUserToAddRows = true;
       _mapping.AllowUserToDeleteRows = true;
-      _mapping.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-      _mapping.Columns.Add("FieldName", "Field Name (matches Boosted: ... text)");
-      _mapping.Columns.Add("TokenToSend", "Message to Send (plaintext)");
+      _mapping.Columns.Clear();
+      _mapping.Columns.Add("FieldName", "Field Name");
+      _mapping.Columns.Add("TokenToSend", "Message to Send");
+      _stepPanel.Controls.Add(_mapping);
+
+      _mapping.Rows.Clear();
+      if (_cfg.FieldMapping != null)
+      {
+        foreach (var kv in _cfg.FieldMapping)
+          _mapping.Rows.Add(kv.Key, kv.Value);
+      }
+
       Theme.StyleGrid(_mapping);
+    }
 
-      // Defaults
-      _mapping.Rows.Add("Pine Tree", "FollowTo PineTree");
-      _mapping.Rows.Add("Bamboo", "FollowTo Bamboo");
-      _mapping.Rows.Add("Blue Flower", "FollowTo BlueFlower");
+    private void BuildStepSlash()
+    {
+      _stepPanel.Controls.Add(Title("Slash Command Registration", 12, 10));
+      _stepPanel.Controls.Add(Theme.MutedLabel("If GuildOnly is enabled, you must provide guild IDs or the bot won’t start.", 12, 44));
 
-      card2.Controls.Add(_mapping);
+      _guildOnly.Text = "GuildOnly (register to specific guilds)";
+      _guildOnly.AutoSize = true;
+      _guildOnly.Location = new Point(12, 80);
+      _guildOnly.ForeColor = Theme.Muted;
+      _guildOnly.Checked = _cfg.SlashRegistration?.GuildOnly ?? true;
+      _stepPanel.Controls.Add(_guildOnly);
 
-      // Make mapping card stretch nicely with window
-      card1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      card2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      _guildIds.Location = new Point(12, 112);
+      _guildIds.Size = new Size(_stepPanel.Width - 24, _stepPanel.Height - 124);
+      _guildIds.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+      _guildIds.RowHeadersVisible = false;
+      _guildIds.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+      _guildIds.AllowUserToAddRows = true;
+      _guildIds.AllowUserToDeleteRows = true;
+      _guildIds.Columns.Clear();
+      _guildIds.Columns.Add("GuildId", "Guild ID");
+      _stepPanel.Controls.Add(_guildIds);
 
-      _content.Resize += (_, __) =>
+      _guildIds.Rows.Clear();
+      foreach (var id in _cfg.SlashRegistration?.GuildIds ?? new List<string>())
+        _guildIds.Rows.Add(id);
+
+      void UpdateEnabled() => _guildIds.Enabled = _guildOnly.Checked;
+      _guildOnly.CheckedChanged += (_, __) => UpdateEnabled();
+      UpdateEnabled();
+
+      Theme.StyleGrid(_guildIds);
+    }
+
+    private bool ValidateCurrentStep()
+    {
+      if (_stepIndex == 0)
       {
-        int w = _content.ClientSize.Width - (pad * 2) - SystemInformation.VerticalScrollBarWidth;
-        if (w < 640) w = 640;
+        var token = _token.Text.Trim();
+        var monitor = _monitor.Text.Trim();
+        if (string.IsNullOrWhiteSpace(token) || token.Contains("PASTE", StringComparison.OrdinalIgnoreCase))
+        {
+          MessageBox.Show("Token is required.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+          return false;
+        }
+        if (string.IsNullOrWhiteSpace(monitor))
+        {
+          MessageBox.Show("MonitorChannelId is required.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+          return false;
+        }
 
-        card1.Width = w;
-        card2.Width = w;
+        _cfg.DiscordToken = token;
+        _cfg.MonitorChannelId = monitor;
+        _cfg.Presence.TtlMinutes = (int)_ttl.Value;
+        return true;
+      }
 
-        _token.Width = w - 40;
-        _mapping.Width = w - 40;
+      if (_stepIndex == 1)
+      {
+        _cfg.BoostDestChannelIds = CollectOneCol(_dest);
+        _cfg.SuperUsers = CollectOneCol(_super);
+        if (_cfg.BoostDestChannelIds.Count < 1)
+        {
+          MessageBox.Show("Add at least one destination channel ID.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+          return false;
+        }
+        return true;
+      }
 
-        // adjust right-side dest box
-        _dest.Width = Math.Max(220, w - 40 - 350);
+      if (_stepIndex == 2)
+      {
+        _cfg.FieldMapping = CollectMap(_mapping);
+        if (_cfg.FieldMapping.Count < 1)
+        {
+          MessageBox.Show("Add at least one field mapping.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+          return false;
+        }
+        return true;
+      }
+
+      _cfg.SlashRegistration ??= new SlashRegistrationConfig();
+      _cfg.SlashRegistration.GuildOnly = _guildOnly.Checked;
+      _cfg.SlashRegistration.GuildIds = CollectOneCol(_guildIds);
+
+      if (_cfg.SlashRegistration.GuildOnly && _cfg.SlashRegistration.GuildIds.Count < 1)
+      {
+        MessageBox.Show("GuildOnly is enabled — add at least one Guild ID.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return false;
+      }
+
+      return true;
+    }
+
+    private void SaveConfig()
+    {
+      JsonUtil.Write(AppPaths.ConfigPath, _cfg);
+    }
+
+    private Label Title(string text, int x, int y)
+    {
+      return new Label
+      {
+        Text = text,
+        AutoSize = true,
+        Font = Theme.TitleFont(this),
+        ForeColor = Theme.Text,
+        Location = new Point(x, y)
       };
     }
 
-    private void AddLabeledText(Panel parent, string label, TextBox tb, int x, int y, int w, bool mask = false)
+    private void AddLabel(string text, int x, int y)
     {
-      var l = new Label
+      _stepPanel.Controls.Add(new Label
       {
-        Text = label,
+        Text = text,
         AutoSize = true,
         Location = new Point(x, y),
         ForeColor = Theme.Muted
-      };
-      parent.Controls.Add(l);
-
-      tb.Location = new Point(x, y + 18);
-      tb.Size = new Size(w, 24);
-      if (mask) tb.UseSystemPasswordChar = true;
-      Theme.StyleTextBox(tb);
-      parent.Controls.Add(tb);
+      });
     }
 
-    private void AddLabeledNumeric(Panel parent, string label, NumericUpDown n, int x, int y, int w, int min, int max, int val)
-    {
-      var l = new Label
-      {
-        Text = label,
-        AutoSize = true,
-        Location = new Point(x, y),
-        ForeColor = Theme.Muted
-      };
-      parent.Controls.Add(l);
-
-      n.Location = new Point(x, y + 18);
-      n.Size = new Size(w, 24);
-      n.Minimum = min;
-      n.Maximum = max;
-      n.Value = val;
-      Theme.StyleNumeric(n);
-      parent.Controls.Add(n);
-    }
-
-    private static List<string> ParseCsvIds(string s)
+    private static List<string> CollectOneCol(DataGridView grid)
     {
       var list = new List<string>();
-      if (string.IsNullOrWhiteSpace(s)) return list;
-      foreach (var part in s.Split(','))
+      foreach (DataGridViewRow row in grid.Rows)
       {
-        var t = part.Trim();
-        if (t.Length > 0) list.Add(t);
+        if (row.IsNewRow) continue;
+        var v = Convert.ToString(row.Cells[0].Value)?.Trim();
+        if (!string.IsNullOrWhiteSpace(v)) list.Add(v);
       }
       return list;
     }
 
-    private void Finish()
+    private static Dictionary<string, string> CollectMap(DataGridView grid)
     {
-      var token = _token.Text.Trim();
-      var monitor = _monitor.Text.Trim();
-      var dest = ParseCsvIds(_dest.Text);
-
-      if (string.IsNullOrWhiteSpace(token))
-      {
-        MessageBox.Show("Please paste a real token.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        return;
-      }
-      if (string.IsNullOrWhiteSpace(monitor))
-      {
-        MessageBox.Show("MonitorChannelId is required.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        return;
-      }
-      if (dest.Count < 1)
-      {
-        MessageBox.Show("At least one destination channel ID is required.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        return;
-      }
-
-      var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-      foreach (DataGridViewRow row in _mapping.Rows)
+      var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+      foreach (DataGridViewRow row in grid.Rows)
       {
         if (row.IsNewRow) continue;
         var k = Convert.ToString(row.Cells[0].Value)?.Trim();
         var v = Convert.ToString(row.Cells[1].Value)?.Trim();
         if (string.IsNullOrWhiteSpace(k) || string.IsNullOrWhiteSpace(v)) continue;
-        mapping[k] = v;
+        map[k] = v;
       }
-
-      if (mapping.Count < 1)
-      {
-        MessageBox.Show("Add at least one mapping row.", "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        return;
-      }
-
-      var cfg = new BotConfig
-      {
-        DiscordToken = token,
-        MonitorChannelId = monitor,
-        BoostDestChannelIds = dest,
-        FieldMapping = mapping,
-        Presence = new PresenceConfig { TtlMinutes = (int)_ttl.Value }
-      };
-
-      JsonUtil.Write(AppPaths.ConfigPath, cfg);
-      DialogResult = DialogResult.OK;
-      Close();
+      return map;
     }
   }
 }
