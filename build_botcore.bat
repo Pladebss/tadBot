@@ -1,29 +1,36 @@
 @echo off
-setlocal
-title TadSync - Build Bot Core
+setlocal EnableDelayedExpansion
+title Build botcore.exe
 
 set "ROOT=%~dp0"
-set "OUT=%ROOT%launcher\TadSyncLauncher\Assets"
-set "BOT_EXE_NAME=botcore.exe"
-
-where node >nul 2>nul || (echo [FATAL] Node.js not found.& pause & exit /b 1)
-where npm  >nul 2>nul || (echo [FATAL] npm not found.& pause & exit /b 1)
-
-if not exist "%OUT%" mkdir "%OUT%"
-
 cd /d "%ROOT%"
+
+set "OUTDIR=%ROOT%executable"
+set "EXE=botcore.exe"
+set "ENTRY=src/index.js"
+
+where node >nul 2>nul || (echo [FATAL] Node not found & pause & exit /b 1)
+where npm  >nul 2>nul || (echo [FATAL] npm not found & pause & exit /b 1)
+
+echo [INFO] Installing deps...
 if exist package-lock.json (
-  call npm ci || (echo [FATAL] npm ci failed.& pause & exit /b 1)
+  call npm ci || (echo [FATAL] npm ci failed & pause & exit /b 1)
 ) else (
-  call npm install || (echo [FATAL] npm install failed.& pause & exit /b 1)
+  call npm install || (echo [FATAL] npm install failed & pause & exit /b 1)
 )
 
-call npx --yes pkg "src/index.js" --targets node18-win-x64 --output "%OUT%\%BOT_EXE_NAME%"
+echo [INFO] Ensuring pkg...
+call npx --yes pkg --version >nul 2>nul || (echo [FATAL] pkg not available & pause & exit /b 1)
+
+if not exist "%OUTDIR%" mkdir "%OUTDIR%"
+
+echo [INFO] Building %EXE% ...
+call npx --yes pkg "%ENTRY%" --targets node18-win-x64 --output "%OUTDIR%\%EXE%"
 if errorlevel 1 (
-  echo [FATAL] pkg build failed.
+  echo [FATAL] pkg build failed
   pause
   exit /b 1
 )
 
-echo [DONE] Built: %OUT%\%BOT_EXE_NAME%
-pause
+echo [DONE] %OUTDIR%\%EXE%
+exit /b 0

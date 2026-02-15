@@ -46,5 +46,7 @@ build.bat
 build_all*
 edit_token.bat
 OLD/
+launcher/TadSyncLauncher/Assets/botcore.exe
 launcher/**/bin/
 launcher/**/obj/
+executable/

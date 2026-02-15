@@ -1,48 +1,50 @@
 @echo off
-setlocal EnableExtensions DisableDelayedExpansion
-title TadSync - Build Launcher
+setlocal EnableDelayedExpansion
+title Build TadSyncLauncher.exe
 
 set "ROOT=%~dp0"
-set "OUT=%ROOT%executable"
-set "LAUNCHER_EXE_NAME=TadSyncLauncher.exe"
+set "OUTDIR=%ROOT%executable"
+set "LAUNCHER_PROJ=%ROOT%launcher\TadSyncLauncher\TadSyncLauncher.csproj"
+set "ASSETS_DIR=%ROOT%launcher\TadSyncLauncher\Assets"
+set "BOTCORE_EXE=%OUTDIR%\botcore.exe"
 
-where dotnet >nul 2>nul
-if errorlevel 1 goto DOTNET_MISSING
+where dotnet >nul 2>nul || (echo [FATAL] dotnet not found & pause & exit /b 1)
 
-if not exist "%OUT%" mkdir "%OUT%"
+if not exist "%BOTCORE_EXE%" (
+  echo [FATAL] botcore.exe missing: %BOTCORE_EXE%
+  echo Run build_botcore.bat first.
+  pause
+  exit /b 1
+)
 
-cd /d "%ROOT%launcher\TadSyncLauncher"
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
-if errorlevel 1 goto PUBLISH_FAIL
+if not exist "%ASSETS_DIR%" mkdir "%ASSETS_DIR%"
 
-set "PUB=%ROOT%launcher\TadSyncLauncher\bin\Release\net8.0-windows\win-x64\publish"
-if not exist "%PUB%\TadSyncLauncher.exe" goto EXE_MISSING
+echo [INFO] Copying botcore.exe into launcher assets...
+copy /y "%BOTCORE_EXE%" "%ASSETS_DIR%\botcore.exe" >nul
 
-copy /y "%PUB%\TadSyncLauncher.exe" "%OUT%\%LAUNCHER_EXE_NAME%" >nul
-if errorlevel 1 goto COPY_FAIL
+echo [INFO] Publishing launcher (single exe)...
+dotnet publish "%LAUNCHER_PROJ%" -c Release -r win-x64 --self-contained true ^
+  /p:PublishSingleFile=true ^
+  /p:IncludeNativeLibrariesForSelfExtract=true
 
-echo.
-echo [DONE] Built: %OUT%\%LAUNCHER_EXE_NAME%
-echo.
+if errorlevel 1 (
+  echo [FATAL] dotnet publish failed
+  pause
+  exit /b 1
+)
+
+set "PUBDIR=%ROOT%launcher\TadSyncLauncher\bin\Release\net8.0-windows\win-x64\publish"
+if not exist "%PUBDIR%\TadSyncLauncher.exe" (
+  echo [FATAL] Publish output not found at %PUBDIR%
+  pause
+  exit /b 1
+)
+
+if not exist "%OUTDIR%" mkdir "%OUTDIR%"
+
+echo [INFO] Copying final exe to executable\TadSyncLauncher.exe
+copy /y "%PUBDIR%\TadSyncLauncher.exe" "%OUTDIR%\TadSyncLauncher.exe" >nul
+
+echo [DONE] %OUTDIR%\TadSyncLauncher.exe
 pause
 exit /b 0
-
-:DOTNET_MISSING
-echo [FATAL] dotnet SDK not found (install .NET 8 SDK).
-pause
-exit /b 1
-
-:PUBLISH_FAIL
-echo [FATAL] dotnet publish failed.
-pause
-exit /b 1
-
-:EXE_MISSING
-echo [FATAL] Launcher exe not found: %PUB%\TadSyncLauncher.exe
-pause
-exit /b 1
-
-:COPY_FAIL
-echo [FATAL] Failed to copy launcher exe.
-pause
-exit /b 1
