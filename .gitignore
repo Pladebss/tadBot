@@ -41,8 +41,9 @@ temp_update/
 ########################################
 # Reserved For Building
 ########################################
-build_*
+#build_*
 build.bat
+build_all*
 edit_token.bat
 OLD/
 launcher/**/bin/

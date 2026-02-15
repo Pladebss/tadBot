@@ -10,4 +10,8 @@
     <RootNamespace>TadSyncLauncher</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\botcore.exe" LogicalName="TadSyncLauncher.Assets.botcore.exe" />
+  </ItemGroup>
+  
 </Project>

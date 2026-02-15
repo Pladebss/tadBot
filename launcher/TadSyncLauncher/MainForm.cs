@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
+using System.Diagnostics;
+
 
 namespace TadSyncLauncher
 {
@@ -138,12 +140,35 @@ namespace TadSyncLauncher
         Location = new Point(actions.Width - 136, 12),
         Anchor = AnchorStyles.Top | AnchorStyles.Right
       };
+
+      
       btnOpenAppData.Click += (_, __) =>
       {
         try { System.Diagnostics.Process.Start("explorer.exe", AppPaths.AppDataRoot); } catch { }
       };
       Theme.StyleButton(btnOpenAppData);
       actions.Controls.Add(btnOpenAppData);
+      var btnViewLog = new Button
+        {
+        Text = "View Bot Log",
+        Size = new Size(120, 30),
+        Location = new Point(actions.Width - 268, 12),
+        Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+
+        btnViewLog.Click += (_, __) =>
+        {
+        try
+        {
+            var logPath = _bot.GetLogPath(); // uses BotProcessManager.cs
+            if (!File.Exists(logPath)) File.WriteAllText(logPath, "(log not created yet)");
+            Process.Start("notepad.exe", logPath);
+        }
+        catch { }
+        };
+
+        Theme.StyleButton(btnViewLog);
+        actions.Controls.Add(btnViewLog);
     }
 
     private void AddRow(Panel parent, string label, Label value, int y)
